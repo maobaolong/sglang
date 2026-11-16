@@ -1576,6 +1576,18 @@ class UnifiedRadixCache(BasePrefixCache):
         # instead of forking it, and the tree frees what the request still held.
         is_finished = req.finished()
         token_ids = req.full_untruncated_fill_ids[:up_to]
+        logger.debug(
+            "Checkpoint into tree for %s: finished=%s, up_to=%d, tokens=%d, "
+            "protected=%d, inserted=%d, mamba_last=%s, mamba_prev=%s",
+            req.rid,
+            is_finished,
+            up_to,
+            len(token_ids),
+            req.kv.cache_protected_len,
+            req.kv.cache_inserted_len,
+            req.kv.mamba_last_track_seqlen,
+            req.kv.mamba_prev_track_seqlen,
+        )
 
         if self.disable:
             if is_finished:
@@ -1603,11 +1615,20 @@ class UnifiedRadixCache(BasePrefixCache):
                 token_ids_len=len(token_ids),
                 is_finished=is_finished,
             )
+            logger.debug(
+                "Checkpoint component for %s: component=%s, cache_len=%s",
+                req.rid,
+                comp.component_type,
+                cl,
+            )
             if cl is not None:
                 effective_cache_len = min(effective_cache_len, cl)
 
         for comp in self._components_tuple:
             effective_cache_len = comp.floor_cache_len(effective_cache_len)
+        logger.debug(
+            "Checkpoint effective length for %s: %d", req.rid, effective_cache_len
+        )
 
         radix_key = RadixKey(
             token_ids[:effective_cache_len],
@@ -1658,6 +1679,15 @@ class UnifiedRadixCache(BasePrefixCache):
         finally:
             if reuse_existing_mamba:
                 insert_params.allow_missing_mamba = False
+        logger.debug(
+            "Checkpoint insert for %s: key_len=%d, prefix_len=%d, "
+            "last_device_node=%s, mamba_exist=%s",
+            req.rid,
+            len(radix_key),
+            result.prefix_len,
+            result.last_device_node,
+            result.mamba_exist,
+        )
 
         if result.rotation_tail_declined:
             # Rotation-base discontinuity with the matched chain (pipelined
